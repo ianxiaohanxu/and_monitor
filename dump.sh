@@ -1,22 +1,27 @@
 #!/bin/bash
 
 # Judge parameter number
-if [ $# != 2 ];then
-echo 'Need two arguments'
-exit 1
+if [ $# != 1 ];then
+    echo 'Need only one argument'
+    exit 1
 fi
 
 # Verify if android device connected normally
 if ! adb devices | grep 'device$' > /dev/null; then
     echo 'No available device attached'
+    exit 1
 fi
 
 package_name=$1
+userId=$(adb shell dumpsys package com.yx | awk '/userId/{print $1}' | awk -F = '{print $2}')
 
 time_str=$(date +%Y%m%d%H%M%S)
-cpu_file="cpu${time_str}.csv"
-mem_file="mem${time_str}.csv"
-gpu_file="gpu${time_str}.csv"
+mkdir $time_str
+cpu_file="$time_str/cpu.csv"
+mem_file="$time_str/mem.csv"
+gpu_file="$time_str/gpu.csv"
+bat_temp="$time_str/bat_temp.csv"
+netstats_file="$time_str/netstats.csv"
 
 if [ ! -f $cpu_file ]; then
     touch $cpu_file
@@ -30,13 +35,21 @@ if [ ! -f $gpu_file ]; then
     touch $gpu_file
 fi
 
-if [ -e log.txt ]; then
-    rm -f log.txt
+if [ ! -f $bat_temp ]; then
+    touch $bat_temp
 fi
 
-touch log.txt
+if [ ! -f $netstats_file ]; then
+    touch $netstats_file
+fi
 
-adb shell monkey -p $package_name --throttle 500 --ignore-crashes --ignore-timeouts -v -v -v $2 > log.txt &
+#if [ -e log.txt ]; then
+#    rm -f log.txt
+#fi
+#
+#touch log.txt
+#
+#adb shell monkey -p $package_name --throttle 500 --ignore-crashes --ignore-timeouts -v -v -v $2 > log.txt &
 
 # Function for getting cpu info
 function get_cpu(){
@@ -97,8 +110,60 @@ while sleep 1; do
     get_gpu $package_name &
 done &
 
-while sleep 5; do
-    if ! ps -ax | grep -i monkey | grep -v grep &>/dev/null; then
-        ps -ax | grep -i dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9 &>/dev/null
-    fi
+# Function for getting battery temperature
+function get_bat_temp(){
+    temp=$(adb shell dumpsys battery | awk '/temperature/{print $2}')
+    temp=${temp:0:3}
+    temp=$((temp/10))
+    echo "$(date +%Y%m%d%H%M%S),$temp" >> $bat_temp
+}
+
+# dump battery temperature info
+echo "time,battery_temp" >> $bat_temp
+while sleep 1; do
+    get_bat_temp &
 done &
+
+# Getting netstats
+rx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$6}")
+rx=0
+for item in $rx_list; do
+    rx=$((rx+item))
+done
+
+tx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$8}")
+tx=0
+for item in $tx_list; do
+    tx=$((tx+item))
+done
+
+start_rx=$rx
+start_tx=$tx
+
+read -p "Please press Enter to continue..."
+rx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$6}")
+rx=0
+for item in $rx_list; do
+    rx=$((rx+item))
+done
+
+tx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$8}")
+tx=0
+for item in $tx_list; do
+    tx=$((tx+item))
+done
+
+end_rx=$rx
+end_tx=$tx
+rbyte=$((end_rx-start_rx))
+tbyte=$((end_tx-start_tx))
+total_byte=$((rbyte+tbyte))
+echo "rbyte,tbyte,total_byte" > $netstats_file
+echo "$rbyte,$tbyte,$total_byte" >> $netstats_file
+
+ps -ax | grep ./dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9
+#while sleep 5; do
+#    if ! ps -ax | grep -i monkey | grep -v grep &>/dev/null; then
+#        ps -ax | grep -i dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9 &>/dev/null
+#    fi
+#done &
