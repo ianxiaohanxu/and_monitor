@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Judge parameter number
-if [ $# != 1 ];then
-    echo 'Need only one argument'
+if [ $# != 2 ];then
+    echo 'Need two arguments'
     exit 1
 fi
 
@@ -12,9 +12,10 @@ if ! adb devices | grep 'device$' > /dev/null; then
     exit 1
 fi
 
-package_name=$1
-userId=$(adb shell dumpsys package com.yx | awk '/userId/{print $1}' | awk -F = '{print $2}')
-
+serial_id=$1
+package_name=$2
+userId=$(adb -s $serial_id shell dumpsys package $package_name | awk '/userId/{print $1}' | awk -F = '{print $2}')
+userId=${userId:0:5}
 time_str=$(date +%Y%m%d%H%M%S)
 mkdir $time_str
 cpu_file="$time_str/cpu.csv"
@@ -22,6 +23,7 @@ mem_file="$time_str/mem.csv"
 gpu_file="$time_str/gpu.csv"
 bat_temp="$time_str/bat_temp.csv"
 netstats_file="$time_str/netstats.csv"
+speed_file="$time_str/speed.csv"
 
 if [ ! -f $cpu_file ]; then
     touch $cpu_file
@@ -43,17 +45,9 @@ if [ ! -f $netstats_file ]; then
     touch $netstats_file
 fi
 
-#if [ -e log.txt ]; then
-#    rm -f log.txt
-#fi
-#
-#touch log.txt
-#
-#adb shell monkey -p $package_name --throttle 500 --ignore-crashes --ignore-timeouts -v -v -v $2 > log.txt &
-
 # Function for getting cpu info
 function get_cpu(){
-    local cpu_info=$(adb shell dumpsys cpuinfo | grep "$1: " | awk '{print $1","$3","$6}') 
+    local cpu_info=$(adb -s $1 shell dumpsys cpuinfo | grep "$2: " | awk '{print $1","$3","$6}') 
     # local cpu_info_integer=${cpu_info%\%*}
     # time, cpu percentage
     echo "$(date +%Y%m%d%H%M%S),$cpu_info" >> $cpu_file 
@@ -62,12 +56,12 @@ function get_cpu(){
 # dump cpu info
 echo "time,cpu total,cpu user,cpu kernel" >> $cpu_file
 while sleep 1; do
-    get_cpu $package_name &
+    get_cpu $serial_id $package_name &
 done &
 
 # Function for getting memory info
 function get_mem(){
-    local mem_info=($(adb shell dumpsys meminfo $1 | grep -E 'Native Heap|Dalvik Heap' | awk '{print $7" "$8}'))
+    local mem_info=($(adb -s $1 shell dumpsys meminfo $2 | grep -E 'Native Heap|Dalvik Heap' | awk '{print $7" "$8}'))
     # time, dalvik heap size, dalvik heap alloc, native heap size, native heap alloc
     echo "$(date +%Y%m%d%H%M%S),${mem_info[2]},${mem_info[3]},${mem_info[0]},${mem_info[1]}" >> $mem_file
 }
@@ -75,12 +69,12 @@ function get_mem(){
 # dump memory info
 echo "time,dalvik heap size,dalvik heap alloc,native heap size,native heap alloc" >> $mem_file
 while sleep 1; do
-    get_mem $package_name &
+    get_mem $serial_id $package_name &
 done &
 
 # Function for getting gpu info
 function get_gpu(){
-    nums=($(adb shell dumpsys gfxinfo $1 | grep '[[:digit:]]\{1,3\}\.[[:digit:]]\{2\}.*[[:digit:]]\{1,3\}\.[[:digit:]]\{2\}'))
+    nums=($(adb -s $1 shell dumpsys gfxinfo $2 | sed -n '/Profile data in ms:/,$p' | grep '[[:digit:]]\{1,3\}\.[[:digit:]]\{2\}.*[[:digit:]]\{1,3\}\.[[:digit:]]\{2\}'))
 
     draw=0
     process=0
@@ -107,12 +101,12 @@ function get_gpu(){
 # dump gpu info
 echo "time,draw,process,execute" >> $gpu_file
 while sleep 1; do
-    get_gpu $package_name &
+    get_gpu $serial_id $package_name &
 done &
 
 # Function for getting battery temperature
 function get_bat_temp(){
-    temp=$(adb shell dumpsys battery | awk '/temperature/{print $2}')
+    temp=$(adb -s $1 shell dumpsys battery | awk '/temperature/{print $2}')
     temp=${temp:0:3}
     temp=$((temp/10))
     echo "$(date +%Y%m%d%H%M%S),$temp" >> $bat_temp
@@ -121,37 +115,65 @@ function get_bat_temp(){
 # dump battery temperature info
 echo "time,battery_temp" >> $bat_temp
 while sleep 1; do
-    get_bat_temp &
+    get_bat_temp $serial_id &
 done &
 
 # Getting netstats
-rx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$6}")
-rx=0
-for item in $rx_list; do
-    rx=$((rx+item))
-done
+function get_rx(){
+    rx_list=$(adb -s $1 shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$6}")
+    rx=0
+    for item in $rx_list; do
+        rx=$((rx+item))
+    done
+}
 
-tx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$8}")
-tx=0
-for item in $tx_list; do
-    tx=$((tx+item))
-done
+function get_tx(){
+    tx_list=$(adb -s $1 shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$8}")
+    tx=0
+    for item in $tx_list; do
+        tx=$((tx+item))
+    done
+}
 
+get_rx $serial_id
 start_rx=$rx
+start_rspeed=$rx
+get_tx $serial_id
 start_tx=$tx
+start_tspeed=$tx
+
+function get_speed(){
+    rspeed=$((rx-start_rspeed))
+    tspeed=$((tx-start_tspeed))
+    speed=$((rspeed+tspeed))
+    cur_time=$(date +%Y%m%d%H%M%S)
+    echo "$cur_time,$rspeed,$tspeed,$speed" >> $speed_file
+}
+
+# dump speed info
+echo "time,r_speed,t_speed,total_speed" >> $speed_file
+while sleep 1; do
+    get_rx $serial_id
+    get_tx $serial_id
+    get_speed &
+    start_rspeed=$rx
+    start_tspeed=$tx
+done &
 
 read -p "Please press Enter to continue..."
-rx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$6}")
-rx=0
-for item in $rx_list; do
-    rx=$((rx+item))
-done
-
-tx_list=$(adb shell cat /proc/net/xt_qtaguid/stats | awk "/$userId/{print \$8}")
-tx=0
-for item in $tx_list; do
-    tx=$((tx+item))
-done
+#rx_list=$(adb -s $1 shell cat /proc/net/xt_qtaguid/stats | grep $userId | awk '{print $6}')
+#rx=0
+#for item in $rx_list; do
+#    rx=$((rx+item))
+#done
+#
+#tx_list=$(adb -s $1 shell cat /proc/net/xt_qtaguid/stats | grep $userId | awk '{print $8}')
+#tx=0
+#for item in $tx_list; do
+#    tx=$((tx+item))
+#done
+get_rx $serial_id
+get_tx $serial_id
 
 end_rx=$rx
 end_tx=$tx
@@ -161,9 +183,4 @@ total_byte=$((rbyte+tbyte))
 echo "rbyte,tbyte,total_byte" > $netstats_file
 echo "$rbyte,$tbyte,$total_byte" >> $netstats_file
 
-ps -ax | grep ./dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9
-#while sleep 5; do
-#    if ! ps -ax | grep -i monkey | grep -v grep &>/dev/null; then
-#        ps -ax | grep -i dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9 &>/dev/null
-#    fi
-#done &
+ps -ax | grep dump.sh | grep -v grep | awk '{print $1}' | xargs kill -9
