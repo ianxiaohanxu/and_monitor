@@ -160,7 +160,7 @@ while sleep 1; do
     start_tspeed=$tx
 done &
 
-read -p "Please press Enter to continue..."
+read -p "Action on your phone, press Enter key after you finish..."
 #rx_list=$(adb -s $1 shell cat /proc/net/xt_qtaguid/stats | grep $userId | awk '{print $6}')
 #rx=0
 #for item in $rx_list; do
