@@ -14,6 +14,8 @@ fi
 
 serial_id=$1
 package_name=$2
+cpu_counter=$(adb shell ls /sys/devices/system/cpu | grep -c "cpu\d\+")
+echo $cpu_counter
 userId=$(adb -s $serial_id shell dumpsys package $package_name | awk '/userId/{print $1}' | awk -F = '{print $2}')
 userId=${userId:0:5}
 time_str=$(date +%Y%m%d%H%M%S)
@@ -47,10 +49,17 @@ fi
 
 # Function for getting cpu info
 function get_cpu(){
-    local cpu_info=$(adb -s $1 shell dumpsys cpuinfo | grep "$2: " | awk '{print $1","$3","$6}') 
+    set -x
+    local cpu_info=($(adb -s $1 shell dumpsys cpuinfo | grep "$2: " | awk '{print $1" "$3" "$6}') )
     # local cpu_info_integer=${cpu_info%\%*}
     # time, cpu percentage
-    echo "$(date +%Y%m%d%H%M%S),$cpu_info" >> $cpu_file 
+    for ((i=0; i<${#cpu_info[*]}; i++)); do
+        value=${cpu_info[$i]}
+        value=${value%\%*}
+        cpu_info[$i]=$(echo "scale=1; $value/$cpu_counter" | bc)%
+    done
+    echo "$(date +"%Y-%m-%d %H:%M:%S"),${cpu_info[0]},${cpu_info[1]},${cpu_info[2]}" >> $cpu_file 
+    set +x
 }
 
 # dump cpu info
@@ -63,7 +72,7 @@ done &
 function get_mem(){
     local mem_info=($(adb -s $1 shell dumpsys meminfo $2 | grep -E 'Native Heap|Dalvik Heap' | awk '{print $7" "$8}'))
     # time, dalvik heap size, dalvik heap alloc, native heap size, native heap alloc
-    echo "$(date +%Y%m%d%H%M%S),${mem_info[2]},${mem_info[3]},${mem_info[0]},${mem_info[1]}" >> $mem_file
+    echo "$(date +"%Y-%m-%d %H:%M:%S"),${mem_info[2]},${mem_info[3]},${mem_info[0]},${mem_info[1]}" >> $mem_file
 }
 
 # dump memory info
@@ -95,7 +104,7 @@ function get_gpu(){
         fi
     done
     # time, frame drop count for draw, frame drop count for process, frame drop count for execute
-    echo "$(date +%Y%m%d%H%M%S),$draw,$process,$execute" >> $gpu_file
+    echo "$(date +"%Y-%m-%d %H:%M:%S"),$draw,$process,$execute" >> $gpu_file
 }
 
 # dump gpu info
@@ -109,7 +118,7 @@ function get_bat_temp(){
     temp=$(adb -s $1 shell dumpsys battery | awk '/temperature/{print $2}')
     temp=${temp:0:3}
     temp=$((temp/10))
-    echo "$(date +%Y%m%d%H%M%S),$temp" >> $bat_temp
+    echo "$(date +"%Y-%m-%d %H:%M:%S"),$temp" >> $bat_temp
 }
 
 # dump battery temperature info
@@ -146,7 +155,7 @@ function get_speed(){
     rspeed=$((rx-start_rspeed))
     tspeed=$((tx-start_tspeed))
     speed=$((rspeed+tspeed))
-    cur_time=$(date +%Y%m%d%H%M%S)
+    cur_time=$(date +"%Y-%m-%d %H:%M:%S")
     echo "$cur_time,$rspeed,$tspeed,$speed" >> $speed_file
 }
 
