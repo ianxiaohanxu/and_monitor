@@ -15,7 +15,6 @@ fi
 serial_id=$1
 package_name=$2
 cpu_counter=$(adb shell ls /sys/devices/system/cpu | grep -c "cpu\d\+")
-echo $cpu_counter
 userId=$(adb -s $serial_id shell dumpsys package $package_name | awk '/userId/{print $1}' | awk -F = '{print $2}')
 userId=${userId:0:5}
 time_str=$(date +%Y%m%d%H%M%S)
@@ -49,7 +48,6 @@ fi
 
 # Function for getting cpu info
 function get_cpu(){
-    set -x
     local cpu_info=($(adb -s $1 shell dumpsys cpuinfo | grep "$2: " | awk '{print $1" "$3" "$6}') )
     # local cpu_info_integer=${cpu_info%\%*}
     # time, cpu percentage
@@ -59,7 +57,6 @@ function get_cpu(){
         cpu_info[$i]=$(echo "scale=1; $value/$cpu_counter" | bc)%
     done
     echo "$(date +"%Y-%m-%d %H:%M:%S"),${cpu_info[0]},${cpu_info[1]},${cpu_info[2]}" >> $cpu_file 
-    set +x
 }
 
 # dump cpu info
