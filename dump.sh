@@ -48,19 +48,14 @@ fi
 
 # Function for getting cpu info
 function get_cpu(){
-    local cpu_info=($(adb -s $1 shell dumpsys cpuinfo | grep "$2: " | awk '{print $1" "$3" "$6}') )
-    # local cpu_info_integer=${cpu_info%\%*}
-    # time, cpu percentage
-    for ((i=0; i<${#cpu_info[*]}; i++)); do
-        value=${cpu_info[$i]}
-        value=${value%\%*}
-        cpu_info[$i]=$(echo "scale=1; $value/$cpu_counter" | bc)
-    done
-    echo "$(date +"%Y-%m-%d %H:%M:%S"),${cpu_info[0]},${cpu_info[1]},${cpu_info[2]}" >> $cpu_file 
+    cur_time=$(date +"%Y-%m-%d %H:%M:%S")
+    cpu_usage=$(adb -s $1 shell top -n 1 | grep "${package_name}\s*$" | awk '{print $3}' )
+    cpu_usage=${cpu_usage%\%*}
+    echo "${cur_time},${cpu_usage}" >> $cpu_file
 }
 
 # dump cpu info
-echo "time,cpu total,cpu user,cpu kernel" >> $cpu_file
+echo "time,cpu total" >> $cpu_file
 while sleep 1; do
     get_cpu $serial_id $package_name &
 done &
