@@ -54,7 +54,7 @@ function get_cpu(){
     for ((i=0; i<${#cpu_info[*]}; i++)); do
         value=${cpu_info[$i]}
         value=${value%\%*}
-        cpu_info[$i]=$(echo "scale=1; $value/$cpu_counter" | bc)%
+        cpu_info[$i]=$(echo "scale=1; $value/$cpu_counter" | bc)
     done
     echo "$(date +"%Y-%m-%d %H:%M:%S"),${cpu_info[0]},${cpu_info[1]},${cpu_info[2]}" >> $cpu_file 
 }
