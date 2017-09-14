@@ -49,8 +49,7 @@ fi
 # Function for getting cpu info
 function get_cpu(){
     cur_time=$(date +"%Y-%m-%d %H:%M:%S")
-    cpu_usage=$(adb -s $1 shell top -n 1 | grep "${package_name}\s*$" | awk '{print $3}' )
-    cpu_usage=${cpu_usage%\%*}
+    cpu_usage=$(adb -s $1 shell top -n 1 | grep -E "${package_name}" | awk '{print $3}' | awk -F % 'BEGIN {count=0;} {count+=$1;} END {print count;}' )
     if [ $cpu_usage -le 100 ]; then
         echo "${cur_time},${cpu_usage}" >> $cpu_file
     fi
